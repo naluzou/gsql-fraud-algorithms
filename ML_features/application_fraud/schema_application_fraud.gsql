@@ -1,0 +1,24 @@
+CREATE GRAPH application_fraud (*)
+USE GRAPH application_fraud
+
+CREATE SCHEMA_CHANGE JOB schema_application_fraud FOR GRAPH application_fraud {
+  ADD VERTEX Application (PRIMARY_ID id INT, is_fraudulent BOOL, start_date DATETIME, age INT, blacklisted BOOL, group_id INT DEFAULT 0) WITH PRIMARY_ID_AS_ATTRIBUTE="true";
+  ADD VERTEX Account (PRIMARY_ID id INT, blacklisted BOOL, page_rank FLOAT DEFAULT 0, group_id INT DEFAULT 0) WITH PRIMARY_ID_AS_ATTRIBUTE="true";
+  ADD VERTEX Address (PRIMARY_ID address STRING, group_id INT DEFAULT 0) WITH PRIMARY_ID_AS_ATTRIBUTE="true";
+  ADD VERTEX Email (PRIMARY_ID email STRING, group_id INT DEFAULT 0) WITH PRIMARY_ID_AS_ATTRIBUTE="true";
+  ADD VERTEX Phone (PRIMARY_ID phone STRING, group_id INT DEFAULT 0) WITH PRIMARY_ID_AS_ATTRIBUTE="true";
+  ADD VERTEX SSN (PRIMARY_ID ssn STRING, group_id INT DEFAULT 0) WITH PRIMARY_ID_AS_ATTRIBUTE="true";
+  ADD VERTEX Credit_Card (PRIMARY_ID id INT, credit_limit INT, group_id INT DEFAULT 0) WITH PRIMARY_ID_AS_ATTRIBUTE="true";
+  ADD VERTEX Transaction (PRIMARY_ID id INT, amount INT, date DATETIME, remaining_credit INT, balance INT, late BOOL, group_id INT DEFAULT 0) WITH PRIMARY_ID_AS_ATTRIBUTE="true";
+
+  ADD UNDIRECTED EDGE Has_Account (FROM Application, TO Account);
+  ADD UNDIRECTED EDGE Has_Address (FROM Application, TO Address);
+  ADD UNDIRECTED EDGE Has_Email (FROM Application, TO Email);
+  ADD UNDIRECTED EDGE Has_Phone (FROM Application, TO Phone);
+  ADD UNDIRECTED EDGE Has_SSN (FROM Application, TO SSN);
+  ADD UNDIRECTED EDGE Has_Card (FROM Application, TO Credit_Card);
+  ADD UNDIRECTED EDGE Sent_Payment (FROM Account, TO Transaction);
+  ADD UNDIRECTED EDGE Received_Payment (FROM Transaction, TO Account);
+}
+
+RUN SCHEMA_CHANGE JOB schema_application_fraud

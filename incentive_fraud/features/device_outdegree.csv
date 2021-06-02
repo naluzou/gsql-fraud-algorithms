@@ -1,0 +1,3 @@
+group_id,min_device_outdegree,max_device_outdegree,avg_device_outdegree
+4194304,2,2,2
+1048576,2,3,2.5

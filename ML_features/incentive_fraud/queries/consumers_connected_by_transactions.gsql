@@ -1,0 +1,49 @@
+DROP QUERY consumers_connected_by_transactions
+
+CREATE DISTRIBUTED QUERY consumers_connected_by_transactions(int hops, string path) FOR GRAPH incentive_fraud { 
+  /*
+  Find the number of consumers connected to each merchant via transactions.
+  A hop is merchant <- transaction <- consumer
+  */ 
+  
+  SetAccum<int> @set;
+
+  FILE f (path);
+  f.println("id", "consumers_connected_by_transactions");
+  
+  // Begin by initializing each consumer's @set to its own id
+  Consumers = {Account.*};
+  Consumers = SELECT c
+              FROM Consumers:c
+              POST-ACCUM c.@set += c.id;
+  
+  // For each hop, we will propagate the consumer's @set to the transaction and to the merchant.
+  // Then we'll propagate from merchant to the consumer again.
+  FOREACH i IN RANGE[1, hops] DO
+    Start = {Account.*};
+    Transactions =  SELECT t
+                    FROM Start:c-(Sent_Payment:e)-Transaction:t
+                    ACCUM t.@set += c.@set;
+    Merchants = SELECT m
+                FROM Transactions:t-(Received_Payment:e)-Merchant:m
+                ACCUM m.@set += t.@set;
+  
+    IF i < hops THEN
+      Transactions =  SELECT t
+                      FROM Merchants:m-(Received_Payment:e)-Transaction:t
+                      ACCUM t.@set += m.@set;
+      Consumers = SELECT c
+                  FROM Transactions:t-(Sent_Payment:e)-Account:c
+                  ACCUM c.@set += t.@set;
+    END;  
+  END;
+  
+  Merchants = {Merchant.*};
+  Merchants = SELECT m
+              FROM Merchants:m
+              POST-ACCUM
+                f.println(m.id, m.@set.size());
+}
+
+INSTALL QUERY consumers_connected_by_transactions
+RUN QUERY consumers_connected_by_transactions(2, "/home/tigergraph/mydata/incentive_fraud/features/consumers_connected_by_transactions.csv")

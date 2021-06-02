@@ -1,0 +1,38 @@
+DROP QUERY invitee_transactions
+
+CREATE DISTRIBUTED QUERY invitee_transactions(DATETIME date, string path) FOR GRAPH incentive_fraud { 
+  /*
+  For a given input date, find the number of users who registered using each account's invite code
+  And the total transaction cost of those users in the last 30 days.
+  */
+  
+  int days_window = 30; // We look for transactions less than 30 days old
+  SumAccum<int> @amount;
+  SumAccum<int> @transaction_total;
+  SumAccum<int> @invitee_transaction_total;
+  
+  FILE f (path);
+  f.println("id", "num_invitees", "transaction_total");
+  
+  Start = {Account.*};
+  Invitees =  SELECT t
+              FROM Start:s-(Referred:e)-Account:t
+              WHERE year(e.date) == year(date) AND month(e.date) == month(date) AND day(e.date) == day(date)
+              ACCUM s.@amount += 1;
+  Transactions =  SELECT t
+                  FROM Invitees:i-(Sent_Payment:e)-Transaction:t
+                  WHERE datetime_diff(now(), t.date) < 60 * 60 * 24 * days_window
+                  ACCUM i.@transaction_total += t.amount;
+  Inviters = SELECT s
+          FROM Start:s-(Referred:e)-Account:i
+          ACCUM s.@invitee_transaction_total += i.@transaction_total;
+  
+  Start = SELECT s
+          FROM Start:s
+          POST-ACCUM
+            f.println(s.id, s.@amount, s.@invitee_transaction_total);
+}
+
+INSTALL QUERY invitee_transactions
+RUN QUERY invitee_transactions("2020-02-15 00:00:00", "/home/tigergraph/mydata/incentive_fraud/features/invitee_transactions.csv")
+

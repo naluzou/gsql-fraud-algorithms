@@ -1,0 +1,29 @@
+DROP QUERY age_per_group
+
+CREATE DISTRIBUTED QUERY age_per_group(string path) FOR GRAPH application_fraud { 
+  /*
+  Gets the min, max, and average age per group
+  */ 
+  MapAccum<int, MaxAccum<Int>> @@max_age;
+  MapAccum<int, MinAccum<Int>> @@min_age;
+  MapAccum<int, AvgAccum> @@avg_age;
+  
+  FILE f (path);
+  f.println("group_id", "max_age", "min_age", "avg_age");
+  
+  Start = { Application.* };
+  Start = Select a 
+          FROM Start:a
+          POST-ACCUM
+            @@max_age += (a.group_id -> a.age),
+            @@min_age += (a.group_id -> a.age),
+            @@avg_age += (a.group_id -> a.age);
+  
+  FOREACH (key, value) IN @@max_age DO
+    f.println(key, @@max_age.get(key), @@min_age.get(key), @@avg_age.get(key));
+  END;
+}
+
+INSTALL QUERY age_per_group
+RUN QUERY age_per_group("/home/tigergraph/mydata/application_fraud/features/age_per_group.csv")
+

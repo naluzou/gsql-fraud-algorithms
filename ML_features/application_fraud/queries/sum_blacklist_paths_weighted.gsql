@@ -1,0 +1,66 @@
+DROP QUERY sum_blacklist_paths_weighted
+
+CREATE DISTRIBUTED QUERY sum_blacklist_paths_weighted(int hops, double ssn_weight, double addr_weight, double phone_weight, double email_weight, string path) FOR GRAPH application_fraud { 
+  /*
+  Hops: Each hop refers to an application-info-application traversal.
+  Counts the number of shortest paths between each application and blacklisted applications within the number of hops.
+  Paths can traverse along application info (email/ssn/phone/address)
+  */
+  
+  // Key = blacklisted account id, Value = weighted sum of paths
+  MapAccum<int, double> @paths;
+  SumAccum<double> @total_paths;
+  
+  FILE f (path);
+  f.println("id", "sum_blacklist_paths_weighted");
+  
+  // Start by finding the blacklisted applications
+  Start = { Application.* };
+  Start = SELECT s FROM Start:s
+          WHERE s.blacklisted == true
+          ACCUM
+            s.@paths += (s.id -> 1);
+  
+  // For each hop, we can count the number of paths by conducting BFS
+  // and adding @num_paths to the adjacent unvisited nodes.
+  FOREACH i IN RANGE[1, hops] DO
+    hop1 =  SELECT t
+            FROM Start:s-((Has_Email|Has_SSN|Has_Phone|Has_Address):e)-(Email|SSN|Phone|Address):t
+            ACCUM
+              double weight = 0.0,
+              IF t.type == "SSN" THEN
+                weight = ssn_weight
+              ELSE IF t.type == "Address" THEN
+                weight = addr_weight
+              ELSE IF t.type == "Phone" THEN
+                weight = phone_weight
+              ELSE IF t.type == "Email" THEN
+                weight = email_weight
+              END,
+              FOREACH (key, value) IN s.@paths DO
+                IF NOT t.@paths.containsKey(key) THEN
+                  t.@paths += (key -> value * weight)
+                END
+              END;
+    Start = SELECT t
+            FROM hop1:s-((Has_Email|Has_SSN|Has_Phone|Has_Address):e)-Application:t
+            ACCUM
+              FOREACH (key, value) IN s.@paths DO
+                IF NOT t.@paths.containsKey(key) THEN
+                  t.@paths += (key -> value)
+                END
+              END;
+  END;
+  
+  Start = {Application.*};
+  Start = SELECT a
+          FROM Start:a
+          POST-ACCUM
+            FOREACH (key, value) IN a.@paths DO
+              a.@total_paths += value
+            END,
+            f.println(a.id, a.@total_paths);
+}
+
+INSTALL QUERY sum_blacklist_paths_weighted
+RUN QUERY sum_blacklist_paths_weighted(2,0.8,0.6,0.5,0.4, "/home/tigergraph/mydata/application_fraud/features/sum_blacklist_paths_weighted.csv")

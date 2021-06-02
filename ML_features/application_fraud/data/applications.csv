@@ -1,0 +1,11 @@
+app_id,is_fraudulent,app_date,app_age,acc_id,acc_blacklisted,email,card_id,ssn,phone,address
+0,FALSE,2010-03-03,40,0,FALSE,"test1@gmail.com",0,"425-44-3392","425-300-3000","88th Ave"
+1,FALSE,2013-04-02,21,1,FALSE,"test1@gmail.com",1,"528-45-3424","425-301-3000","Harry Plaza"
+2,FALSE,2020-03-04,40,2,TRUE,"wow@gmail.com",2,"425-44-0000","425-302-3000","45th place"
+3,FALSE,2001-04-04,30,3,FALSE,"hello@gmail.com",3,"030-44-0003","425-303-3000","86th st"
+4,FALSE,2003-05-04,20,4,FALSE,"three@gmail.com",4,"101-00-0000","425-300-3000","NE 1st st"
+5,FALSE,2005-04-06,25,5,FALSE,"test1@gmail.com",5,"102-00-0000","425-300-3000","NE 1st st"
+6,FALSE, 2005-04-06,26,6,FALSE,"test1@gmail.com",6,"103-00-0000","425-300-3000","NE 1st st"
+7,FALSE,2010-05-30,18,7,TRUE,"four@gmail.com",7,"425-44-3392","800-535-3040","88th Ave"
+8,FALSE,2009-05-24,47,8,FALSE,"test1@gmail.com",8,"395-68-4256","432-592-3040","88th Ave"
+9,FALSE,2010-05-30,45,9,TRUE,"five@gmail.com",9,"395-68-4256","432-592-3040","56th Place"

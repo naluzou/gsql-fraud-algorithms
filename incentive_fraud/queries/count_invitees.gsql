@@ -1,0 +1,43 @@
+DROP QUERY count_invitees
+
+CREATE DISTRIBUTED QUERY count_invitees(int hops, string path) FOR GRAPH incentive_fraud { 
+  /*
+  Count the number of users who were referred by k hops from the given vertex.
+  Ie. if the hop is 2, we find the number of users who were referred by users referred by the given user.
+  */
+  
+  SumAccum<int> @old_count;
+  SumAccum<int> @count;
+  
+  FILE f (path);
+  f.println("id", "adjacent_transactions");
+  
+  Start = {Account.*};
+  Start = SELECT c
+          FROM Start:c
+          POST-ACCUM c.@count = 1;
+  
+  FOREACH i IN RANGE[1, hops] DO
+    Start = {Account.*};
+
+    Start = SELECT s
+            FROM Start:s
+            POST-ACCUM
+              s.@old_count = s.@count,
+              s.@count = 0;
+  
+    Start = SELECT s
+            FROM Start:s-(Referred_By:e)-Account:t
+            ACCUM
+                t.@count += s.@old_count;
+  END;
+  
+  Start = {Account.*};
+  Start = SELECT s
+          FROM Start:s
+          POST-ACCUM
+            f.println(s.id, s.@count);
+}
+
+INSTALL QUERY count_invitees
+RUN QUERY count_invitees(2, "/home/tigergraph/mydata/incentive_fraud/features/count_invitees.csv")

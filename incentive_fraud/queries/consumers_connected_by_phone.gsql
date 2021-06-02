@@ -1,0 +1,25 @@
+DROP QUERY consumers_connected_by_phone
+
+CREATE DISTRIBUTED QUERY consumers_connected_by_phone(string path) FOR GRAPH incentive_fraud { 
+  /*
+  Find the number of consumers connected to each merchant by phone.
+  */ 
+  
+  SumAccum<int> @count;
+
+  FILE f (path);
+  f.println("id", "consumers_connected_by_phone");
+  
+  Start = {Account.*};
+  Phones =  SELECT p
+            FROM Start:c-(Has_Phone:e)-Phone:p
+            ACCUM p.@count += 1;
+  Start = {Merchant.*};
+  Merchants = SELECT m FROM Start:m-(Merchant_Has_Phone:e)-Phone:p
+              ACCUM m.@count = p.@count
+              POST-ACCUM f.println(m.id, m.@count);
+}
+
+INSTALL QUERY consumers_connected_by_phone
+RUN QUERY consumers_connected_by_phone("/home/tigergraph/mydata/incentive_fraud/features/consumers_connected_by_phone.csv")
+

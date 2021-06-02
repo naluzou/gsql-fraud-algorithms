@@ -1,0 +1,94 @@
+DROP QUERY accounts_anomaly_transaction
+
+CREATE DISTRIBUTED QUERY accounts_anomaly_transaction (double limit_threshold, INT consecutive_months_threshold, int remaining_credit_threshold, int num_payments_threshold, double balance_threshold, string path) FOR GRAPH application_fraud {
+	/*
+  Find the number of accounts with anomaly transactions in each group.
+  An anomaly transaction is defined as:
+    1. For N consecutive months after the credit card was issued,  greater than or equal to 90%
+       of the credit card limit was spent, or the remaining credit is less than M.
+    2. For N consecutive months after the credit card was issued,  the number of payments is   
+       greater than or equal to M times, maximum balance is greater or equal to 50% of the   
+       credit limit.
+  */
+  
+  TYPEDEF TUPLE<int year, int month, int amount, int credit_remaining, int balance> month_transaction;
+	
+  // Key = group id, Value = # of anomaly accounts
+  MapAccum<int, int> @@anomaly_accounts;
+  HeapAccum<month_transaction>(1000, year ASC, month ASC) @monthly_payments;
+	MaxAccum<double> @amount_threshold = 0;
+  MaxAccum<double> @balance_threshold = 0;
+  SumAccum<int> @@monthly_total;
+  
+  FILE f (path);
+  f.println("group_id", "num_anomaly_accounts");
+  
+  // Initialize amount and balance thresholds by multiplying the thresholds with the credit limit.
+  CreditCards = {Credit_Card.*};
+  Applications =  SELECT p
+                  FROM CreditCards:c-(Has_Card:e)-Application:p
+                  ACCUM
+                    p.@amount_threshold += limit_threshold * c.credit_limit,
+                    p.@balance_threshold += balance_threshold * c.credit_limit;  Accounts = { Account.* };
+	Accounts = {Account.*};
+  Accounts =  SELECT a
+              FROM Accounts:a-(Has_Account:h)-Application:p
+	            ACCUM
+                a.@amount_threshold = p.@amount_threshold,
+                a.@balance_threshold = p.@balance_threshold;
+  
+	Accounts =  SELECT a
+              FROM Accounts:a-(Sent_Payment:e)-Transaction:t
+	            ACCUM
+                // Storing the month_transaction tuple in a heap will sort it by date for us
+		            a.@monthly_payments += month_transaction(year(t.date), month(t.date), t.amount, t.remaining_credit, t.balance)
+	            POST-ACCUM
+		            int consecutive_months = 1,
+                int monthly_total = 0,
+                int num_payments = 0,
+                bool max_balance_exceeded = FALSE,
+                bool credit_depleted = FALSE,
+		            int current_year = -1,
+		            int current_month = -1,
+  
+		            FOREACH m IN a.@monthly_payments DO
+      			      num_payments = num_payments + 1,
+			            IF current_year == m.year AND current_month == m.month THEN
+                    monthly_total = monthly_total + m.amount,
+        			      credit_depleted = credit_depleted OR m.credit_remaining < remaining_credit_threshold,
+        			      max_balance_exceeded = max_balance_exceeded OR m.balance > a.@balance_threshold
+      			      ELSE IF (current_year == m.year AND current_month + 1 == m.month) OR
+                          (current_year + 1 == m.year AND current_month == 12 AND m.month == 1) THEN
+				            IF  (monthly_total >= a.@amount_threshold OR credit_depleted) OR
+                        (num_payments >= num_payments_threshold AND max_balance_exceeded) THEN
+					            consecutive_months = consecutive_months + 1,
+					            IF consecutive_months >= consecutive_months_threshold THEN
+						            @@anomaly_accounts += (a.group_id -> 1),
+						            BREAK
+					            END
+				            END,
+				            monthly_total = m.amount
+                  ELSE
+				            consecutive_months = 1,
+				            monthly_total = m.amount,
+        			      num_payments = 0,
+        			      max_balance_exceeded = FALSE,
+        			      credit_depleted = FALSE
+			            END,
+
+                  current_year = m.year,
+			            current_month = m.month
+		            END;
+  
+  FOREACH (key, value) IN @@anomaly_accounts DO
+    f.println(key,value);
+  END;
+}
+
+
+INSTALL QUERY accounts_anomaly_transaction
+RUN QUERY accounts_anomaly_transaction(0.9, 2, 0, 3, 0.4, "/home/tigergraph/mydata/application_fraud/features/accounts_anomaly_transaction.csv")
+
+
+
+

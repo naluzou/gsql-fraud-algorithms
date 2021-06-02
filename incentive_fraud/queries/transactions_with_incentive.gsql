@@ -1,0 +1,24 @@
+DROP QUERY transactions_with_incentive
+
+CREATE DISTRIBUTED QUERY transactions_with_incentive(string path) FOR GRAPH incentive_fraud { 
+  /*
+  Find the number of transactions from each account using incentive.
+  */
+  
+  SumAccum<int> @count;
+  
+  FILE f (path);
+  f.println("id", "transactions_with_incentive");
+  
+  Start = {Account.*};
+  Transactions =  SELECT t
+                  FROM Start:s-(Sent_Payment:e)-Transaction:t
+                  WHERE t.use_incentive == true
+                  ACCUM s.@count += 1
+                  POST-ACCUM f.println(s.id, s.@count);
+}
+
+INSTALL QUERY transactions_with_incentive
+RUN QUERY transactions_with_incentive("/home/tigergraph/mydata/incentive_fraud/features/transactions_with_incentive.csv")
+
+

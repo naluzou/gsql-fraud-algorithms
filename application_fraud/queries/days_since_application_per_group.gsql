@@ -1,0 +1,33 @@
+DROP QUERY days_since_application_per_group
+
+CREATE DISTRIBUTED QUERY days_since_application_per_group(string path) FOR GRAPH application_fraud { 
+	/*
+  Finds the min, max, avg # of days since application was filed per group'
+  */
+  
+  MapAccum<int, MaxAccum<Int>> @@max_days;
+  MapAccum<int, MinAccum<Int>> @@min_days;
+  MapAccum<int, AvgAccum> @@avg_days;
+  
+  FILE f (path);
+  f.println("group_id", "max_days", "min_days", "avg_days");
+  
+  Start = { Application.* };
+  Start = Select a 
+          FROM Start:a
+          POST-ACCUM
+			    	INT diff = datetime_diff(now(), a.start_date),
+			    	INT daysSinceApplication = diff / 86400,
+            @@max_days += (a.group_id -> daysSinceApplication),
+            @@min_days += (a.group_id -> daysSinceApplication),
+            @@avg_days += (a.group_id -> daysSinceApplication);
+  
+  FOREACH (key, value) IN @@max_days DO
+    f.println(key, @@max_days.get(key), @@min_days.get(key), @@avg_days.get(key));
+  END;
+}
+
+INSTALL QUERY days_since_application_per_group
+RUN QUERY days_since_application_per_group("/home/tigergraph/mydata/application_fraud/features/days_since_application_per_group.csv")
+
+

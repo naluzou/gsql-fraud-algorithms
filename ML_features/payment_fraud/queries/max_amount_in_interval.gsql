@@ -1,0 +1,78 @@
+DROP QUERY max_amount_in_interval
+
+CREATE DISTRIBUTED QUERY max_amount_in_interval(int time_interval, string path) FOR GRAPH payment_fraud { 
+  /*
+  Find the max amount transacted to the same merchant within a given interval (int minutes) for each account
+  */ 
+  
+  TYPEDEF TUPLE<datetime date, int amount> payment;
+  
+  // Stores a list of payments to each merchant from a given account.
+  MapAccum<int, ListAccum<payment>> @all_payments;
+  
+  MinAccum<int> @merchant_id;
+  
+  // Heap Accum, ListAccum, MaxAccum are data structures used during calcluation
+  HeapAccum<payment>(1000, date ASC) @heap;
+  ListAccum<payment> @list;
+  MaxAccum<INT> @max = 0;
+  
+  FILE f (path);
+  f.println("id", "max_amount_in_interval");
+  
+  Start = { Transaction.* };
+  
+  // Store merchant id on each transaction vertex
+  Merchants = SELECT m
+              FROM Start:t-(Received_Payment:e)-Merchant:m
+              ACCUM t.@merchant_id += m.id;
+  
+  Start = { Account.* };
+  Start = SELECT s
+          FROM Start:s-(Sent_Payment:e)-Transaction:t
+          ACCUM
+            // Collect all payments by merchant id
+            s.@all_payments += (t.@merchant_id -> payment(t.date, t.amount))
+          POST-ACCUM
+            FOREACH (key, list) IN s.@all_payments DO
+              // For each merchant, first load the payments into a heap to sort the payments
+              s.@heap.clear(),
+              s.@list.clear(),
+              FOREACH p IN list DO
+                s.@heap += p
+              END,
+              FOREACH p IN s.@heap DO
+                s.@list += p
+              END,
+              
+              // Go through the sorted dates and find the largest value within the given interval
+              datetime start_date = s.@heap.top().date,
+              int start_amount = s.@heap.pop().amount,
+              datetime date = start_date,
+              int amount = start_amount,
+              int start_index = 0,
+              int total_amount = 0,
+              int diff_minutes = 0,
+              WHILE diff_minutes > time_interval OR s.@heap.size() > 0 DO
+                IF diff_minutes > time_interval THEN
+                  s.@max += total_amount,
+                  total_amount = total_amount - start_amount,
+                  start_index = start_index + 1,
+                  start_date = s.@list.get(start_index).date,
+                  start_amount = s.@list.get(start_index).amount
+                ELSE
+                  total_amount = total_amount + amount,
+                  date = s.@heap.top().date,
+                  amount = s.@heap.pop().amount
+                END,
+                s.@max += total_amount,
+                diff_minutes = datetime_diff(date, start_date) / 60
+              END
+            END,
+            
+            f.println(s.id, s.@max);
+}
+
+INSTALL QUERY max_amount_in_interval
+RUN QUERY max_amount_in_interval(3, "/home/tigergraph/mydata/payment_fraud/features/max_amount_in_interval.csv")
+

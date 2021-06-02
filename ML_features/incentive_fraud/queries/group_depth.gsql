@@ -1,0 +1,36 @@
+DROP QUERY group_depth
+
+CREATE DISTRIBUTED QUERY group_depth(string path) FOR GRAPH incentive_fraud { 
+  /*
+  Find the depth of each referral tree
+  */
+  
+  MaxAccum<int> @depth;
+  
+  FILE f (path);
+  f.println("group_id", "depth");
+  
+  Start = {Account.*};
+  
+  // Start with the leaf nodes of each referral tree
+  Start = SELECT s
+          FROM Start:s
+          WHERE s.outdegree("Referred") == 0
+          POST-ACCUM s.@depth = 0;
+  
+  WHILE Start.size() > 0 DO
+    Start = SELECT t
+            FROM Start:s-(Referred_By:e)-Account:t
+            ACCUM t.@depth += s.@depth + 1;
+  END;
+
+  Start = {Account.*};
+  Start = SELECT s
+          FROM Start:s
+          WHERE s.is_root == true
+          POST-ACCUM
+            f.println(s.group_id, s.@depth);
+}
+
+INSTALL QUERY group_depth
+RUN QUERY group_depth("/home/tigergraph/mydata/incentive_fraud/features/group_depth.csv")

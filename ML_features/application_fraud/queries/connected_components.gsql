@@ -1,0 +1,42 @@
+DROP QUERY connected_components
+
+CREATE DISTRIBUTED QUERY connected_components() FOR GRAPH application_fraud {
+  /*
+  This query identifies the Connected Components through any undirected edge
+  */
+
+  MinAccum<int> @cc_id = -1;
+  SumAccum<int> @old_id = -1;
+  OrAccum<bool> @active;
+        
+  Start = {ANY};
+
+  S = SELECT x 
+  FROM Start:x
+  POST-ACCUM x.@cc_id = getvid(x),
+     x.@old_id = getvid(x)        
+  ;
+
+  WHILE (Start.size()>0) DO
+    Start = SELECT t
+            FROM Start:s -(:e)-> :t
+            ACCUM t.@cc_id += s.@cc_id // If s has a smaller id than t, copy the id to t
+            POST-ACCUM
+              CASE WHEN t.@old_id != t.@cc_id THEN // If t's id has changed
+                t.@old_id = t.@cc_id,
+                t.@active = true
+              ELSE 
+                t.@active = false
+              END
+            HAVING t.@active == true
+            ;
+  END;
+
+  Start = { ANY };
+
+	UPDATE s FROM Start:s SET s.group_id = s.@cc_id;
+}
+
+INSTALL QUERY connected_components
+RUN QUERY connected_components()
+
